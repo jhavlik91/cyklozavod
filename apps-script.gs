@@ -48,10 +48,39 @@ const PORADI_HEADER = [
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("Cyklozávod")
-    .addItem("🏁 Vygenerovat pořadí + TOP 3", "generateStandings")
+    .addItem("🏁 Seřadit kategorie podle času", "sortCategorySheets")
     .addSeparator()
+    .addItem("🏆 Vygenerovat pořadí + TOP 3 (vyrobí listy Pořadí/TOP 3)", "generateStandings")
     .addItem("⚙️ Připravit kategorie taby", "setupCategorySheets")
     .addToUi();
+}
+
+/**
+ * Seřadí KAŽDÝ kategorie-tab podle Čas (ms) vzestupně, in-place.
+ * Zachovává všechny řádky (obě jízdy) i sloupce – nic neslučuje,
+ * nic nepřepisuje mimo pořadí řádků v samotných tabech.
+ * Hodí se po ručních úpravách (smazání zkažené jízdy apod.).
+ */
+function sortCategorySheets() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const katSheet = ss.getSheetByName(KATEGORIE_SHEET);
+  if (!katSheet) {
+    throw new Error("Chybí list '" + KATEGORIE_SHEET + "' se seznamem věkovek.");
+  }
+  const last = katSheet.getLastRow();
+  if (last < 2) return;
+  const cats = katSheet.getRange(2, 1, last - 1, 1).getValues()
+    .map(r => String(r[0]).trim()).filter(String);
+
+  let sorted = 0;
+  cats.forEach(cat => {
+    const sheet = ss.getSheetByName(sheetNameForCategory(cat));
+    if (!sheet || sheet.getLastRow() < 3) return;   // aspoň 2 datové řádky
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, RESULTS_HEADER.length)
+      .sort({ column: 7, ascending: true });        // sloupec 7 = Čas (ms)
+    sorted++;
+  });
+  ss.toast("Seřazeno kategorií: " + sorted, "Cyklozávod", 5);
 }
 
 /** Test v prohlížeči – ověří, že je nasazení živé. */
