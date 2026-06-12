@@ -32,6 +32,12 @@ const RESULTS_HEADER = [
 // Sloupec s ID jízdy (1-based) – musí sedět s pozicí v RESULTS_HEADER
 const ID_COL = 8;
 
+// Konečné pořadí (generuje se jednorázově po závodě funkcí generateStandings)
+const PORADI_SHEET  = "Pořadí";
+const PORADI_HEADER = [
+  "Kategorie", "Pořadí", "Číslo", "Barva", "Jméno", "Nejlepší čas", "Nejlepší (ms)", "Jízd"
+];
+
 /** Test v prohlížeči – ověří, že je nasazení živé. */
 function doGet() {
   return ContentService
@@ -212,3 +218,81 @@ function jsonOut(obj) {
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
+
+/**
+ * JEDNORÁZOVĚ PO ZÁVODĚ – spusť ručně z editoru Apps Scriptu.
+ *
+ * Z kategorie-tabů (v pořadí dle listu Kategorie) spočítá konečné pořadí:
+ *   - klíč závodníka = startovní číslo + barva
+ *   - celkový čas = NEJLEPŠÍ z jeho jízd (nejmenší ms)
+ *   - pořadí se počítá zvlášť v každé kategorii (shodné časy sdílí pořadí)
+ * Výsledek zapíše do listu "Pořadí". Lze opakovat – list se přepíše,
+ * takže když mezitím opravíš/smažeš jízdu v tabu, stačí spustit znovu.
+ *
+ * Pozn.: nevyžaduje redeploy web appky – stačí kód uložit (Cmd+S) a spustit.
+ */
+function generateStandings() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const katSheet = ss.getSheetByName(KATEGORIE_SHEET);
+  if (!katSheet) {
+    throw new Error("Chybí list '" + KATEGORIE_SHEET + "' se seznamem věkovek.");
+  }
+
+  const lastKat = katSheet.getLastRow();
+  const categories = lastKat < 2 ? [] :
+    katSheet.getRange(2, 1, lastKat - 1, 1).getValues()
+      .map(r => String(r[0]).trim()).filter(String);
+
+  const out = [PORADI_HEADER.slice()];
+
+  categories.forEach(cat => {
+    const sheet = ss.getSheetByName(sheetNameForCategory(cat));
+    if (!sheet || sheet.getLastRow() < 2) return;
+
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, RESULTS_HEADER.length).getValues();
+
+    // Seskupení podle číslo+barva → nejlepší ms, počet jízd, jméno z nejlepší jízdy
+    const byRider = {};
+    data.forEach(row => {
+      const number = String(row[1]).trim();   // B Číslo
+      const color  = String(row[2]).trim();   // C Barva
+      const name   = row[3];                   // D Jméno
+      const ms     = Number(row[6]);           // G Čas (ms)
+      if (!number || isNaN(ms)) return;
+
+      const key = number + "|" + color;
+      if (!byRider[key]) {
+        byRider[key] = { number: number, color: color, name: name, ms: ms, count: 1 };
+      } else {
+        byRider[key].count++;
+        if (ms < byRider[key].ms) { byRider[key].ms = ms; byRider[key].name = name; }
+      }
+    });
+
+    const riders = Object.keys(byRider).map(k => byRider[k]);
+    riders.sort((a, b) => a.ms - b.ms);
+
+    let rank = 0, prevMs = null;
+    riders.forEach((r, i) => {
+      if (r.ms !== prevMs) { rank = i + 1; prevMs = r.ms; }  // shodné časy sdílí pořadí
+      out.push([cat, rank, r.number, r.color, r.name, msToTime(r.ms), r.ms, r.count]);
+    });
+  });
+
+  let sheet = ss.getSheetByName(PORADI_SHEET);
+  if (!sheet) sheet = ss.insertSheet(PORADI_SHEET);
+  sheet.clearContents();
+  sheet.getRange(1, 1, out.length, PORADI_HEADER.length).setValues(out);
+  sheet.setFrozenRows(1);
+}
+
+// ms → "mm:ss.mmm" (stejný formát jako v aplikaci)
+function msToTime(ms) {
+  ms = Number(ms) || 0;
+  const m = Math.floor(ms / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  const mil = ms % 1000;
+  return pad2(m) + ":" + pad2(s) + "." + pad3(mil);
+}
+function pad2(n) { n = String(n); return n.length < 2 ? "0" + n : n; }
+function pad3(n) { n = String(n); while (n.length < 3) n = "0" + n; return n; }
