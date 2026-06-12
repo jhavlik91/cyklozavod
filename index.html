@@ -342,7 +342,9 @@
 
     stop1Btn.classList.add("hidden");
     stop2Btn.classList.remove("hidden");
-    number1El.focus();
+    // Žádný focus na input – jinak mobil otevře klávesnici a odscrolluje
+    // STOP 2 zpod palce. Aktivní necháme samotné STOP tlačítko.
+    stop2Btn.focus({ preventScroll: true });
   });
 
   stop2Btn.addEventListener("click", () => {
@@ -358,6 +360,8 @@
     currentRunId = "r-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
 
     stop2Btn.classList.add("hidden");
+    // Oba dojeli → teď je čas zadávat čísla, klávesnice je vítaná
+    number1El.focus({ preventScroll: true });
   });
 
   // ----------------------------------------------------------------------
