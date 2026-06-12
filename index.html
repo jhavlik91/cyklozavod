@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#111111" />
+  <meta name="theme-color" content="#ffffff" />
   <title>Sprint Timer</title>
 
   <style>
@@ -13,8 +13,8 @@
       margin: 0;
       padding: 16px;
       font-family: Arial, sans-serif;
-      background: #111;
-      color: white;
+      background: #fff;
+      color: #111;
       /* Zabrání náhodnému zoomu/scrollu při rychlém ťukání na trati */
       touch-action: manipulation;
       user-select: none;
@@ -26,14 +26,16 @@
     }
 
     .logo {
-      height: 80px;
-      border: 2px dashed #555;
-      border-radius: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
       margin-bottom: 12px;
-      color: #888;
+    }
+
+    .logo img {
+      max-width: 100%;
+      height: auto;
+      max-height: 120px;
     }
 
     .timer {
@@ -65,7 +67,7 @@
     .send  { background: #2962ff; }
 
     .result {
-      background: #222;
+      background: #f2f2f2;
       padding: 16px;
       border-radius: 12px;
       margin-bottom: 16px;
@@ -76,7 +78,7 @@
       padding: 14px;
       font-size: 24px;
       border-radius: 10px;
-      border: none;
+      border: 1px solid #ccc;
       margin-top: 10px;
       box-sizing: border-box;
     }
@@ -95,18 +97,18 @@
       text-align: center;
       min-height: 22px;
       font-size: 15px;
-      color: #ffca28;
+      color: #b26a00;
       margin-bottom: 8px;
     }
 
     .pending {
-      background: #1b2a1b;
-      border: 1px solid #2e7d32;
+      background: #e8f5e9;
+      border: 1px solid #66bb6a;
       border-radius: 10px;
       padding: 10px 14px;
       margin-bottom: 12px;
       font-size: 14px;
-      color: #a5d6a7;
+      color: #2e7d32;
     }
   </style>
 </head>
@@ -115,7 +117,7 @@
 <div class="container">
 
   <div class="logo">
-    LOGO / NÁZEV ZÁVODU
+    <img src="logo.png" alt="CoByDup">
   </div>
 
   <div class="timer" id="timer">00:00.000</div>
@@ -129,21 +131,21 @@
   <button class="stop1 hidden" id="stop1Btn">STOP 1</button>
   <button class="stop2 hidden" id="stop2Btn">STOP 2</button>
 
-  <div id="results" class="hidden">
+  <div id="results">
 
-    <div class="result">
+    <div class="result hidden" id="result1">
       <div class="time-label" id="time1Label"></div>
       <input type="text" inputmode="numeric" pattern="[0-9]*" id="number1"
              placeholder="Startovní číslo 1. v cíli">
     </div>
 
-    <div class="result">
+    <div class="result hidden" id="result2">
       <div class="time-label" id="time2Label"></div>
       <input type="text" inputmode="numeric" pattern="[0-9]*" id="number2"
              placeholder="Startovní číslo 2. v cíli">
     </div>
 
-    <button class="send" id="sendBtn">ODESLAT</button>
+    <button class="send hidden" id="sendBtn">ODESLAT</button>
 
   </div>
 
@@ -168,7 +170,8 @@
   const stop2Btn = document.getElementById("stop2Btn");
   const sendBtn  = document.getElementById("sendBtn");
 
-  const resultsEl   = document.getElementById("results");
+  const result1El   = document.getElementById("result1");
+  const result2El   = document.getElementById("result2");
   const time1Label  = document.getElementById("time1Label");
   const time2Label  = document.getElementById("time2Label");
   const number1El   = document.getElementById("number1");
@@ -216,8 +219,15 @@
 
   stop1Btn.addEventListener("click", () => {
     stop1 = Date.now() - startTime;
+
+    // První čas i input ukážeme hned – obsluha může zadávat číslo
+    // ještě než dojede druhý závodník.
+    time1Label.innerHTML = "1. v cíli &nbsp; " + formatTime(stop1);
+    result1El.classList.remove("hidden");
+
     stop1Btn.classList.add("hidden");
     stop2Btn.classList.remove("hidden");
+    number1El.focus();
   });
 
   stop2Btn.addEventListener("click", () => {
@@ -225,12 +235,11 @@
     clearInterval(interval);
     timerEl.textContent = formatTime(stop2);
 
-    time1Label.innerHTML = "1. v cíli &nbsp; " + formatTime(stop1);
     time2Label.innerHTML = "2. v cíli &nbsp; " + formatTime(stop2);
+    result2El.classList.remove("hidden");
+    sendBtn.classList.remove("hidden");
 
     stop2Btn.classList.add("hidden");
-    resultsEl.classList.remove("hidden");
-    number1El.focus();
   });
 
   // ----------------------------------------------------------------------
@@ -280,7 +289,9 @@
     number1El.value = "";
     number2El.value = "";
 
-    resultsEl.classList.add("hidden");
+    result1El.classList.add("hidden");
+    result2El.classList.add("hidden");
+    sendBtn.classList.add("hidden");
     stop1Btn.classList.add("hidden");
     stop2Btn.classList.add("hidden");
     startBtn.classList.remove("hidden");
