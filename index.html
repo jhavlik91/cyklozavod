@@ -267,7 +267,10 @@
 
   colorBtns.forEach(btn => {
     btn.addEventListener("click", () => {
-      if (startTime !== null) return;           // během měření barvu nepřepínáme
+      // Zamčeno jen za běhu měření (START → STOP 2). Před startem i ve fázi
+      // výsledků (po dojetí, před odesláním) jde barvu změnit.
+      const measuring = startTime !== null && stop2 === null;
+      if (measuring) return;
       selectedColor = btn.dataset.color;
       localStorage.setItem(COLOR_KEY, selectedColor);
       renderColor();
@@ -360,6 +363,7 @@
     currentRunId = "r-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
 
     stop2Btn.classList.add("hidden");
+    colorBtns.forEach(b => b.classList.remove("locked"));  // barvu lze ještě opravit
     // Oba dojeli → teď je čas zadávat čísla, klávesnice je vítaná
     number1El.focus({ preventScroll: true });
   });
