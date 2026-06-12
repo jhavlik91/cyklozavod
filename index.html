@@ -81,7 +81,40 @@
       border: 1px solid #ccc;
       margin-top: 10px;
       box-sizing: border-box;
+      color: #111;
     }
+
+    /* Přepínač barvy jízdy (před STARTem) */
+    .color-select { display: flex; gap: 12px; margin-bottom: 16px; }
+    .color-btn {
+      flex: 1;
+      padding: 18px;
+      font-size: 22px;
+      font-weight: bold;
+      border-radius: 12px;
+      border: 3px solid transparent;
+      cursor: pointer;
+      color: #111;
+      opacity: 0.55;
+    }
+    .color-btn.yellow { background: #ffd600; }
+    .color-btn.white  { background: #fff; border: 3px solid #bbb; }
+    .color-btn.active { opacity: 1; outline: 4px solid #2962ff; outline-offset: 2px; }
+    .color-btn.locked { cursor: not-allowed; }
+
+    /* Karty a inputy se obarví podle zvolené barvy jízdy */
+    .result.yellow { border-left: 10px solid #ffd600; }
+    .result.white  { border-left: 10px solid #bdbdbd; }
+
+    input.bib.yellow {
+      background: #fff59d;
+      border-color: #fbc02d;
+    }
+    input.bib.white {
+      background: #ffffff;
+      border-color: #9e9e9e;
+    }
+    input.bib::placeholder { color: #777; }
 
     .hidden { display: none; }
 
@@ -99,6 +132,14 @@
       font-size: 15px;
       color: #b26a00;
       margin-bottom: 8px;
+    }
+
+    #status.error {
+      color: #fff;
+      background: #d32f2f;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-weight: bold;
     }
 
     .pending {
@@ -126,6 +167,11 @@
 
   <div id="pending" class="pending hidden"></div>
 
+  <div class="color-select" id="colorSelect">
+    <button type="button" class="color-btn yellow" data-color="žlutá">ŽLUTÁ</button>
+    <button type="button" class="color-btn white"  data-color="bílá">BÍLÁ</button>
+  </div>
+
   <button class="start" id="startBtn">START</button>
 
   <button class="stop1 hidden" id="stop1Btn">STOP 1</button>
@@ -135,14 +181,14 @@
 
     <div class="result hidden" id="result1">
       <div class="time-label" id="time1Label"></div>
-      <input type="text" inputmode="numeric" pattern="[0-9]*" id="number1"
-             placeholder="Startovní číslo 1. v cíli">
+      <input class="bib" type="text" inputmode="numeric" pattern="[0-9]*"
+             id="number1" placeholder="Startovní číslo 1. v cíli">
     </div>
 
     <div class="result hidden" id="result2">
       <div class="time-label" id="time2Label"></div>
-      <input type="text" inputmode="numeric" pattern="[0-9]*" id="number2"
-             placeholder="Startovní číslo 2. v cíli">
+      <input class="bib" type="text" inputmode="numeric" pattern="[0-9]*"
+             id="number2" placeholder="Startovní číslo 2. v cíli">
     </div>
 
     <button class="send hidden" id="sendBtn">ODESLAT</button>
@@ -157,6 +203,8 @@
   // ----------------------------------------------------------------------
   const GOOGLE_SCRIPT_URL = "SEM_DEJ_GOOGLE_SCRIPT_URL";
   const SHARED_SECRET     = "SEM_DEJ_TAJNY_RETEZEC"; // musí se shodovat s Apps Scriptem
+
+  const MAX_BIB = 200;            // horní hranice startovního čísla (na barvu)
 
   // ----------------------------------------------------------------------
   // Stav
@@ -177,12 +225,44 @@
   const number1El   = document.getElementById("number1");
   const number2El   = document.getElementById("number2");
 
+  const colorSelect = document.getElementById("colorSelect");
+  const colorBtns   = Array.from(colorSelect.querySelectorAll(".color-btn"));
+
   const OUTBOX_KEY = "sprintTimerOutbox";
+  const COLOR_KEY  = "sprintTimerColor";
 
   let startTime = null;
   let interval  = null;
   let stop1 = null;
   let stop2 = null;
+  let currentRunId = null;   // stabilní ID jízdy – drží se přes opakované pokusy
+
+  // Barva jízdy – obě čísla v dvojici mají stejnou barvu. Pamatuje poslední volbu.
+  let selectedColor = localStorage.getItem(COLOR_KEY) || "žlutá";
+
+  function colorClass(color) { return color === "bílá" ? "white" : "yellow"; }
+
+  function renderColor() {
+    const cls = colorClass(selectedColor);
+    colorBtns.forEach(b => b.classList.toggle("active", b.dataset.color === selectedColor));
+    [result1El, result2El].forEach(el => {
+      el.classList.remove("yellow", "white");
+      el.classList.add(cls);
+    });
+    [number1El, number2El].forEach(el => {
+      el.classList.remove("yellow", "white");
+      el.classList.add(cls);
+    });
+  }
+
+  colorBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (startTime !== null) return;           // během měření barvu nepřepínáme
+      selectedColor = btn.dataset.color;
+      localStorage.setItem(COLOR_KEY, selectedColor);
+      renderColor();
+    });
+  });
 
   // ----------------------------------------------------------------------
   // Pomocné funkce
@@ -198,7 +278,24 @@
     );
   }
 
-  function setStatus(text) { statusEl.textContent = text || ""; }
+  function setStatus(text, type) {
+    statusEl.textContent = text || "";
+    statusEl.classList.toggle("error", type === "error");
+  }
+
+  // Povolit jen číslice – písmena a znaky se rovnou odstraní
+  [number1El, number2El].forEach(el => {
+    el.addEventListener("input", () => {
+      el.value = el.value.replace(/\D/g, "");
+    });
+  });
+
+  // Vrátí platné číslo 1..MAX_BIB, nebo null
+  function validBib(raw) {
+    if (!/^\d+$/.test(raw)) return null;
+    const n = parseInt(raw, 10);
+    return (n >= 1 && n <= MAX_BIB) ? n : null;
+  }
 
   // ----------------------------------------------------------------------
   // Měření času
@@ -213,6 +310,7 @@
       timerEl.textContent = formatTime(Date.now() - startTime);
     }, 31);
 
+    colorBtns.forEach(b => b.classList.add("locked"));  // barva uzamčena pro tuto jízdu
     startBtn.classList.add("hidden");
     stop1Btn.classList.remove("hidden");
   });
@@ -239,44 +337,72 @@
     result2El.classList.remove("hidden");
     sendBtn.classList.remove("hidden");
 
+    // Jedno ID na jízdu – opakované ODESLAT pak server deduplikuje
+    currentRunId = "r-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+
     stop2Btn.classList.add("hidden");
   });
 
   // ----------------------------------------------------------------------
   // Odeslání – přes outbox (odolné vůči výpadku signálu)
   // ----------------------------------------------------------------------
-  sendBtn.addEventListener("click", () => {
+  sendBtn.addEventListener("click", async () => {
     const number1 = number1El.value.trim();
     const number2 = number2El.value.trim();
 
     if (!number1 || !number2) {
-      setStatus("Vyplň obě startovní čísla.");
+      setStatus("Vyplň obě startovní čísla.", "error");
       return;
     }
-    if (number1 === number2) {
-      setStatus("Startovní čísla nesmí být stejná.");
+    const bib1 = validBib(number1);
+    const bib2 = validBib(number2);
+    if (bib1 === null || bib2 === null) {
+      setStatus("Číslo musí být 1–" + MAX_BIB + ".", "error");
+      return;
+    }
+    if (bib1 === bib2) {
+      setStatus("Startovní čísla nesmí být stejná.", "error");
       return;
     }
     if (stop1 === null || stop2 === null) {
-      setStatus("Chybí naměřený čas – změř jízdu znovu.");
+      setStatus("Chybí naměřený čas – změř jízdu znovu.", "error");
       return;
     }
 
     const payload = {
       secret: SHARED_SECRET,
-      rider1: number1,
-      rider2: number2,
+      rider1: String(bib1),
+      rider2: String(bib2),
+      color1: selectedColor,      // dvojice je stejnobarevná
+      color2: selectedColor,
       time1: formatTime(stop1),
       time2: formatTime(stop2),
       ms1: stop1,                 // surové ms pro řazení v Sheetu
       ms2: stop2,
       clientTs: Date.now(),
-      id: "r-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8) // idempotence
+      id: currentRunId            // stabilní ID → idempotence i při opakování
     };
 
     enqueue(payload);
-    resetApp();          // okamžitě připraveno na další dvojici
-    flushOutbox();       // pokus o odeslání na pozadí
+
+    sendBtn.disabled = true;
+    sendBtn.textContent = "Odesílám…";
+    setStatus("Odesílám…");
+
+    await flushOutbox();
+
+    // Reset jen když server potvrdil přijetí (položka už není ve frontě)
+    const confirmed = !readOutbox().some(it => it.id === payload.id);
+
+    sendBtn.disabled = false;
+    sendBtn.textContent = "ODESLAT";
+
+    if (confirmed) {
+      setStatus("Odesláno a uloženo ✓");
+      resetApp();
+    } else {
+      setStatus("Odeslání selhalo – časy zůstávají, zkus ODESLAT znovu.", "error");
+    }
   });
 
   function resetApp() {
@@ -284,6 +410,7 @@
     stop1 = null;
     stop2 = null;
     startTime = null;
+    currentRunId = null;
 
     timerEl.textContent = "00:00.000";
     number1El.value = "";
@@ -295,6 +422,7 @@
     stop1Btn.classList.add("hidden");
     stop2Btn.classList.add("hidden");
     startBtn.classList.remove("hidden");
+    colorBtns.forEach(b => b.classList.remove("locked"));  // barva opět volitelná
   }
 
   // ----------------------------------------------------------------------
@@ -310,7 +438,9 @@
   }
   function enqueue(payload) {
     const items = readOutbox();
-    items.push(payload);
+    const i = items.findIndex(it => it.id === payload.id);
+    if (i >= 0) items[i] = payload;   // stejná jízda → aktualizuj, netvoř duplicitu
+    else items.push(payload);
     writeOutbox(items);
   }
   function renderPending(count) {
@@ -322,6 +452,22 @@
     }
   }
 
+  // Odešle jednu jízdu a OVĚŘÍ odpověď serveru (status:"OK").
+  // text/plain = simple request bez CORS preflightu; Apps Script vrací
+  // Access-Control-Allow-Origin:* → odpověď jde přečíst.
+  async function postItem(item) {
+    const res = await fetch(GOOGLE_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(item)
+    });
+    const data = await res.json();              // hodí, když odpověď není JSON
+    if (data.status !== "OK") {                 // duplicate:true má taky status OK
+      throw new Error(data.error || "server nepotvrdil zápis");
+    }
+    return data;
+  }
+
   let flushing = false;
   async function flushOutbox() {
     if (flushing) return;
@@ -329,24 +475,15 @@
     try {
       let items = readOutbox();
       while (items.length > 0) {
-        const item = items[0];
         try {
-          await fetch(GOOGLE_SCRIPT_URL, {
-            method: "POST",
-            mode: "no-cors",  // Apps Script neposílá CORS hlavičky → jinak by fetch spadl
-            headers: { "Content-Type": "text/plain;charset=utf-8" }, // text/plain = bez preflightu
-            body: JSON.stringify(item)
-          });
-          // no-cors = odpověď nepřečteme; bereme jako odeslané a řešíme idempotenci serverem
-          items = readOutbox();
-          items.shift();
-          writeOutbox(items);
-          setStatus("Odesláno.");
+          await postItem(items[0]);             // čekáme na potvrzení přijetí
         } catch (err) {
-          setStatus("Bez signálu – zkusím to znovu…");
-          break; // necháme ve frontě, zkusíme později
+          setStatus("Bez signálu / server nepotvrdil – zkusím to znovu…", "error");
+          break;                                // necháme ve frontě
         }
         items = readOutbox();
+        items.shift();                          // smažeme až po potvrzení
+        writeOutbox(items);
       }
     } finally {
       flushing = false;
@@ -363,6 +500,7 @@
   });
 
   // Init
+  renderColor();
   renderPending(readOutbox().length);
   flushOutbox();
 </script>

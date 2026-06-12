@@ -20,8 +20,11 @@ const SHARED_SECRET    = "SEM_DEJ_TAJNY_RETEZEC"; // musí se shodovat s index.h
 
 // Hlavička listu Results (vytvoří se automaticky, když chybí)
 const RESULTS_HEADER = [
-  "Čas zápisu", "Startovní číslo", "Jméno", "Kategorie", "Čas", "Čas (ms)", "ID jízdy"
+  "Čas zápisu", "Startovní číslo", "Barva", "Jméno", "Kategorie", "Čas", "Čas (ms)", "ID jízdy"
 ];
+
+// Sloupec s ID jízdy (1-based) – musí sedět s pozicí v RESULTS_HEADER
+const ID_COL = 8;
 
 /** Test v prohlížeči – ověří, že je nasazení živé. */
 function doGet() {
@@ -55,15 +58,16 @@ function doPost(e) {
     const now = new Date();
 
     const riders = [
-      { number: String(data.rider1).trim(), time: data.time1, ms: data.ms1 },
-      { number: String(data.rider2).trim(), time: data.time2, ms: data.ms2 }
+      { number: String(data.rider1).trim(), time: data.time1, ms: data.ms1, color: data.color1 || "" },
+      { number: String(data.rider2).trim(), time: data.time2, ms: data.ms2, color: data.color2 || "" }
     ];
 
     const rows = riders.map(rider => {
-      const found = findRider(startovkaData, rider.number);
+      const found = findRider(startovkaData, rider.number, rider.color);
       return [
         now,
         rider.number,
+        rider.color,
         found.name,
         found.category,
         rider.time,
@@ -100,22 +104,31 @@ function getOrCreateResults(ss) {
 function alreadyStored(resultsSheet, id) {
   const lastRow = resultsSheet.getLastRow();
   if (lastRow < 2) return false;
-  // Sloupec G (7) = ID jízdy
-  const ids = resultsSheet.getRange(2, 7, lastRow - 1, 1).getValues();
+  const ids = resultsSheet.getRange(2, ID_COL, lastRow - 1, 1).getValues();
   for (let i = 0; i < ids.length; i++) {
     if (String(ids[i][0]) === String(id)) return true;
   }
   return false;
 }
 
-function findRider(startovkaData, riderNumber) {
+// Startovka: Startovní číslo | Barva | Jméno | Kategorie
+// Číslo není unikátní napříč barvami (žlutá 50 ≠ bílá 50) – matchujeme obojí.
+function findRider(startovkaData, riderNumber, riderColor) {
+  const color = normColor(riderColor);
   for (let i = 1; i < startovkaData.length; i++) {
     const number = String(startovkaData[i][0]).trim();
-    if (number === riderNumber) {
-      return { name: startovkaData[i][1], category: startovkaData[i][2] };
+    const rowColor = normColor(startovkaData[i][1]);
+    if (number === riderNumber && rowColor === color) {
+      return { name: startovkaData[i][2], category: startovkaData[i][3] };
     }
   }
   return { name: "NEZNÁMÝ ZÁVODNÍK", category: "NEZNÁMÁ KATEGORIE" };
+}
+
+// Sjednotí zápis barvy (diakritika/velikost/mezery), ať lookup nezáleží na formátu.
+function normColor(c) {
+  return String(c || "").trim().toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
 function jsonOut(obj) {

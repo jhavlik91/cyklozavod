@@ -24,20 +24,27 @@ Mobil / prohlížeč
   nezapíše, takže retry netvoří duplicity.
 - **`LockService`** – serializuje souběžné zápisy z více mobilů.
 - **Sloupec `Čas (ms)`** – surové milisekundy pro řazení a leaderboard přímo v Sheetu.
+- **Barva jízdy** – dvojici tvoří dva závodníci **stejné barvy**; barva se volí před
+  STARTem (přepínač ŽLUTÁ/BÍLÁ) a appka si pamatuje poslední volbu. Zapisuje se do
+  sloupce `Barva` a používá při dohledání v `Startovka`.
 - **Sdílený token** – základní pojistka proti náhodnému spamu endpointu.
 
 ## Nastavení
 
 ### 1. Google Sheet
 
-Vytvoř Sheet a list **`Startovka`** s hlavičkou a daty:
+Vytvoř Sheet a list **`Startovka`** s hlavičkou a daty. Číslo **není** unikátní
+napříč barvami (žlutá 50 ≠ bílá 50), proto je v listu sloupec **Barva** a závodník
+se dohledává podle **čísla + barvy**:
 
-| Startovní číslo | Jméno | Kategorie |
-|---|---|---|
-| 101 | Jan Novák | 6–8 let |
-| 102 | Petr Dvořák | 6–8 let |
+| Startovní číslo | Barva | Jméno | Kategorie |
+|---|---|---|---|
+| 50 | žlutá | Jan Novák | 6–8 let |
+| 50 | bílá | Anna Svobodová | 9–10 let |
+| 51 | žlutá | Petr Dvořák | 6–8 let |
 
-List **`Results`** se vytvoří automaticky při prvním zápisu (i s hlavičkou).
+Barva se porovnává bez ohledu na diakritiku/velikost (`Žlutá`, `zluta`, `žlutá`
+jsou totéž). List **`Results`** se vytvoří automaticky při prvním zápisu.
 
 ### 2. Apps Script
 
