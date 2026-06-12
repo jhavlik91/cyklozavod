@@ -9,13 +9,19 @@
  *        Who has access: Anyone
  *   4) Zkopíruj /exec URL do index.html (GOOGLE_SCRIPT_URL)
  *   5) Nastav SHARED_SECRET shodně s index.html
+ *   6) Vytvoř list "Kategorie" (sloupec A: věkovky), pak v editoru spusť
+ *      jednou funkci setupCategorySheets() – předpřipraví taby pro každou věkovku.
+ *
+ * Zápis: každá jízda jde do "Results" (kompletní log) a navíc se každý
+ * závodník zrcadlí do tabu pojmenovaného podle jeho věkové kategorie.
  *
  * POZOR: po každé změně kódu udělej Deploy → Manage deployments → edit
  *        → Version: New version, jinak běží pod stejným URL stará verze.
  */
 
 const STARTOVKA_SHEET = "Startovka";
-const RESULTS_SHEET    = "Results";
+const RESULTS_SHEET    = "Results";       // kompletní log (audit + idempotence)
+const KATEGORIE_SHEET  = "Kategorie";     // seznam věkovek (zdroj pro taby i dropdown)
 const SHARED_SECRET    = "rUOQe4tV52N0lZEwL7g986sb4U0escic"; // musí se shodovat s index.html
 
 // Hlavička listu Results (vytvoří se automaticky, když chybí)
@@ -62,26 +68,33 @@ function doPost(e) {
       { number: String(data.rider2).trim(), time: data.time2, ms: data.ms2, color: data.color2 || "" }
     ];
 
-    const rows = riders.map(rider => {
+    const entries = riders.map(rider => {
       const found = findRider(startovkaData, rider.number, rider.color);
-      return [
-        now,
-        rider.number,
-        rider.color,
-        found.name,
-        found.category,
-        rider.time,
-        rider.ms,
-        data.id || ""
-      ];
+      return {
+        category: found.category,
+        row: [
+          now,
+          rider.number,
+          rider.color,
+          found.name,
+          found.category,
+          rider.time,
+          rider.ms,
+          data.id || ""
+        ]
+      };
     });
 
-    // Oba řádky najednou – atomicky vůči zámku
+    // 1) Kompletní log do Results (oba řádky najednou, atomicky vůči zámku)
+    const allRows = entries.map(e => e.row);
     resultsSheet
-      .getRange(resultsSheet.getLastRow() + 1, 1, rows.length, rows[0].length)
-      .setValues(rows);
+      .getRange(resultsSheet.getLastRow() + 1, 1, allRows.length, allRows[0].length)
+      .setValues(allRows);
 
-    return jsonOut({ status: "OK", written: rows.length });
+    // 2) Zrcadlo do tabu podle věkové kategorie (každý závodník do své kategorie)
+    appendToCategorySheets(ss, entries);
+
+    return jsonOut({ status: "OK", written: allRows.length });
   } catch (err) {
     return jsonOut({ status: "ERROR", error: String(err) });
   } finally {
@@ -99,6 +112,61 @@ function getOrCreateResults(ss) {
     sheet.setFrozenRows(1);
   }
   return sheet;
+}
+
+// Seskupí řádky podle kategorie a zapíše je do příslušných tabů.
+function appendToCategorySheets(ss, entries) {
+  const byCat = {};
+  entries.forEach(e => {
+    const cat = e.category || "NEZNÁMÁ KATEGORIE";
+    (byCat[cat] = byCat[cat] || []).push(e.row);
+  });
+  Object.keys(byCat).forEach(cat => {
+    const sheet = getOrCreateCategorySheet(ss, cat);
+    const rows = byCat[cat];
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  });
+}
+
+// Tab pro danou kategorii (název = kategorie). Vytvoří se i s hlavičkou, když chybí.
+function getOrCreateCategorySheet(ss, category) {
+  const name = sheetNameForCategory(category);
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+  }
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(RESULTS_HEADER);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+// Název listu nesmí obsahovat : \ / ? * [ ] a má limit 100 znaků.
+function sheetNameForCategory(category) {
+  let name = String(category || "NEZNÁMÁ KATEGORIE")
+    .replace(/[:\\\/?*\[\]]/g, " ").trim().slice(0, 100);
+  return name || "NEZNÁMÁ KATEGORIE";
+}
+
+/**
+ * Jednorázově (nebo kdykoliv) spusť ručně z editoru Apps Scriptu.
+ * Z listu `Kategorie` (sloupec A, od 2. řádku) předpřipraví prázdné taby
+ * s hlavičkou pro každou věkovku, ať existují i před prvním zápisem.
+ */
+function setupCategorySheets() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const katSheet = ss.getSheetByName(KATEGORIE_SHEET);
+  if (!katSheet) {
+    throw new Error("Chybí list '" + KATEGORIE_SHEET + "' se seznamem věkovek.");
+  }
+  const last = katSheet.getLastRow();
+  if (last < 2) return;
+  const cats = katSheet.getRange(2, 1, last - 1, 1).getValues();
+  cats.forEach(r => {
+    const cat = String(r[0]).trim();
+    if (cat) getOrCreateCategorySheet(ss, cat);
+  });
 }
 
 function alreadyStored(resultsSheet, id) {
