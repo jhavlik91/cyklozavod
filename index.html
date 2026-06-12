@@ -65,6 +65,13 @@
     .stop1 { background: #ff9100; }
     .stop2 { background: #ff5252; }
     .send  { background: #2962ff; }
+    .reset {
+      background: none;
+      color: #888;
+      font-size: 16px;
+      padding: 12px;
+      margin-top: 4px;
+    }
 
     .result {
       background: #f2f2f2;
@@ -195,6 +202,8 @@
 
   </div>
 
+  <button class="reset hidden" id="resetBtn">↺ Nová jízda (zahodit)</button>
+
 </div>
 
 <script>
@@ -202,7 +211,7 @@
   // KONFIGURACE – vyplň po nasazení Apps Scriptu
   // ----------------------------------------------------------------------
   const GOOGLE_SCRIPT_URL = "SEM_DEJ_GOOGLE_SCRIPT_URL";
-  const SHARED_SECRET     = "SEM_DEJ_TAJNY_RETEZEC"; // musí se shodovat s Apps Scriptem
+  const SHARED_SECRET     = "rUOQe4tV52N0lZEwL7g986sb4U0escic"; // musí sedět s Apps Scriptem; po akci klidně smaž
 
   const MAX_BIB = 200;            // horní hranice startovního čísla (na barvu)
 
@@ -217,6 +226,7 @@
   const stop1Btn = document.getElementById("stop1Btn");
   const stop2Btn = document.getElementById("stop2Btn");
   const sendBtn  = document.getElementById("sendBtn");
+  const resetBtn = document.getElementById("resetBtn");
 
   const result1El   = document.getElementById("result1");
   const result2El   = document.getElementById("result2");
@@ -313,6 +323,13 @@
     colorBtns.forEach(b => b.classList.add("locked"));  // barva uzamčena pro tuto jízdu
     startBtn.classList.add("hidden");
     stop1Btn.classList.remove("hidden");
+    resetBtn.classList.remove("hidden");                // kdykoliv lze zahodit a měřit znovu
+  });
+
+  resetBtn.addEventListener("click", () => {
+    if (startTime !== null && !confirm("Zahodit rozměřenou jízdu a začít znovu?")) return;
+    setStatus("");
+    resetApp();
   });
 
   stop1Btn.addEventListener("click", () => {
@@ -370,7 +387,6 @@
     }
 
     const payload = {
-      secret: SHARED_SECRET,
       rider1: String(bib1),
       rider2: String(bib2),
       color1: selectedColor,      // dvojice je stejnobarevná
@@ -421,6 +437,7 @@
     sendBtn.classList.add("hidden");
     stop1Btn.classList.add("hidden");
     stop2Btn.classList.add("hidden");
+    resetBtn.classList.add("hidden");
     startBtn.classList.remove("hidden");
     colorBtns.forEach(b => b.classList.remove("locked"));  // barva opět volitelná
   }
@@ -459,11 +476,13 @@
     const res = await fetch(GOOGLE_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(item)
+      body: JSON.stringify(Object.assign({}, item, { secret: SHARED_SECRET }))
     });
     const data = await res.json();              // hodí, když odpověď není JSON
     if (data.status !== "OK") {                 // duplicate:true má taky status OK
-      throw new Error(data.error || "server nepotvrdil zápis");
+      const err = new Error(data.error || "server nepotvrdil zápis");
+      err.code = data.error;                    // např. "unauthorized"
+      throw err;
     }
     return data;
   }
@@ -478,7 +497,11 @@
         try {
           await postItem(items[0]);             // čekáme na potvrzení přijetí
         } catch (err) {
-          setStatus("Bez signálu / server nepotvrdil – zkusím to znovu…", "error");
+          if (err.code === "unauthorized") {
+            setStatus("Špatné heslo (SHARED_SECRET) – oprav v index.html / Apps Scriptu.", "error");
+          } else {
+            setStatus("Bez signálu / server nepotvrdil – zkusím to znovu…", "error");
+          }
           break;                                // necháme ve frontě
         }
         items = readOutbox();

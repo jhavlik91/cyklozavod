@@ -16,7 +16,7 @@
 
 const STARTOVKA_SHEET = "Startovka";
 const RESULTS_SHEET    = "Results";
-const SHARED_SECRET    = "SEM_DEJ_TAJNY_RETEZEC"; // musí se shodovat s index.html
+const SHARED_SECRET    = "rUOQe4tV52N0lZEwL7g986sb4U0escic"; // musí se shodovat s index.html
 
 // Hlavička listu Results (vytvoří se automaticky, když chybí)
 const RESULTS_HEADER = [
