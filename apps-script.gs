@@ -125,6 +125,14 @@ function appendToCategorySheets(ss, entries) {
     const sheet = getOrCreateCategorySheet(ss, cat);
     const rows = byCat[cat];
     sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+
+    // Po každém zápisu tab přeřadíme podle Čas (ms) vzestupně (od nejrychlejšího),
+    // ať zůstane seřazený a nerozsype se. Hlavičku (řádek 1) neřadíme.
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 2) {
+      sheet.getRange(2, 1, lastRow - 1, RESULTS_HEADER.length)
+        .sort({ column: 7, ascending: true });   // sloupec 7 = Čas (ms)
+    }
   });
 }
 
