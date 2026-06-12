@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#111111" />
+  <title>Sprint Timer</title>
+
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: white;
+      /* Zabrání náhodnému zoomu/scrollu při rychlém ťukání na trati */
+      touch-action: manipulation;
+      user-select: none;
+    }
+
+    .container {
+      max-width: 500px;
+      margin: auto;
+    }
+
+    .logo {
+      height: 80px;
+      border: 2px dashed #555;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+      color: #888;
+    }
+
+    .timer {
+      font-size: 56px;
+      text-align: center;
+      margin: 24px 0;
+      font-weight: bold;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 1px;
+    }
+
+    button {
+      width: 100%;
+      padding: 22px;
+      font-size: 26px;
+      font-weight: bold;
+      border: none;
+      border-radius: 12px;
+      margin-bottom: 16px;
+      cursor: pointer;
+      color: white;
+    }
+
+    button:disabled { opacity: 0.6; }
+
+    .start { background: #00c853; }
+    .stop1 { background: #ff9100; }
+    .stop2 { background: #ff5252; }
+    .send  { background: #2962ff; }
+
+    .result {
+      background: #222;
+      padding: 16px;
+      border-radius: 12px;
+      margin-bottom: 16px;
+    }
+
+    input {
+      width: 100%;
+      padding: 14px;
+      font-size: 24px;
+      border-radius: 10px;
+      border: none;
+      margin-top: 10px;
+      box-sizing: border-box;
+    }
+
+    .hidden { display: none; }
+
+    .time-label {
+      font-size: 28px;
+      margin-bottom: 6px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .time-label small { color: #888; font-size: 16px; font-weight: normal; }
+
+    #status {
+      text-align: center;
+      min-height: 22px;
+      font-size: 15px;
+      color: #ffca28;
+      margin-bottom: 8px;
+    }
+
+    .pending {
+      background: #1b2a1b;
+      border: 1px solid #2e7d32;
+      border-radius: 10px;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      font-size: 14px;
+      color: #a5d6a7;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <div class="logo">
+    LOGO / NÁZEV ZÁVODU
+  </div>
+
+  <div class="timer" id="timer">00:00.000</div>
+
+  <div id="status"></div>
+
+  <div id="pending" class="pending hidden"></div>
+
+  <button class="start" id="startBtn">START</button>
+
+  <button class="stop1 hidden" id="stop1Btn">STOP 1</button>
+  <button class="stop2 hidden" id="stop2Btn">STOP 2</button>
+
+  <div id="results" class="hidden">
+
+    <div class="result">
+      <div class="time-label" id="time1Label"></div>
+      <input type="text" inputmode="numeric" pattern="[0-9]*" id="number1"
+             placeholder="Startovní číslo 1. v cíli">
+    </div>
+
+    <div class="result">
+      <div class="time-label" id="time2Label"></div>
+      <input type="text" inputmode="numeric" pattern="[0-9]*" id="number2"
+             placeholder="Startovní číslo 2. v cíli">
+    </div>
+
+    <button class="send" id="sendBtn">ODESLAT</button>
+
+  </div>
+
+</div>
+
+<script>
+  // ----------------------------------------------------------------------
+  // KONFIGURACE – vyplň po nasazení Apps Scriptu
+  // ----------------------------------------------------------------------
+  const GOOGLE_SCRIPT_URL = "SEM_DEJ_GOOGLE_SCRIPT_URL";
+  const SHARED_SECRET     = "SEM_DEJ_TAJNY_RETEZEC"; // musí se shodovat s Apps Scriptem
+
+  // ----------------------------------------------------------------------
+  // Stav
+  // ----------------------------------------------------------------------
+  const timerEl   = document.getElementById("timer");
+  const statusEl  = document.getElementById("status");
+  const pendingEl = document.getElementById("pending");
+
+  const startBtn = document.getElementById("startBtn");
+  const stop1Btn = document.getElementById("stop1Btn");
+  const stop2Btn = document.getElementById("stop2Btn");
+  const sendBtn  = document.getElementById("sendBtn");
+
+  const resultsEl   = document.getElementById("results");
+  const time1Label  = document.getElementById("time1Label");
+  const time2Label  = document.getElementById("time2Label");
+  const number1El   = document.getElementById("number1");
+  const number2El   = document.getElementById("number2");
+
+  const OUTBOX_KEY = "sprintTimerOutbox";
+
+  let startTime = null;
+  let interval  = null;
+  let stop1 = null;
+  let stop2 = null;
+
+  // ----------------------------------------------------------------------
+  // Pomocné funkce
+  // ----------------------------------------------------------------------
+  function formatTime(ms) {
+    const minutes = Math.floor(ms / 60000);
+    const seconds = Math.floor((ms % 60000) / 1000);
+    const millis  = ms % 1000;
+    return (
+      String(minutes).padStart(2, "0") + ":" +
+      String(seconds).padStart(2, "0") + "." +
+      String(millis).padStart(3, "0")
+    );
+  }
+
+  function setStatus(text) { statusEl.textContent = text || ""; }
+
+  // ----------------------------------------------------------------------
+  // Měření času
+  // ----------------------------------------------------------------------
+  startBtn.addEventListener("click", () => {
+    startTime = Date.now();
+    stop1 = null;
+    stop2 = null;
+
+    clearInterval(interval);
+    interval = setInterval(() => {
+      timerEl.textContent = formatTime(Date.now() - startTime);
+    }, 31);
+
+    startBtn.classList.add("hidden");
+    stop1Btn.classList.remove("hidden");
+  });
+
+  stop1Btn.addEventListener("click", () => {
+    stop1 = Date.now() - startTime;
+    stop1Btn.classList.add("hidden");
+    stop2Btn.classList.remove("hidden");
+  });
+
+  stop2Btn.addEventListener("click", () => {
+    stop2 = Date.now() - startTime;
+    clearInterval(interval);
+    timerEl.textContent = formatTime(stop2);
+
+    time1Label.innerHTML = "1. v cíli &nbsp; " + formatTime(stop1);
+    time2Label.innerHTML = "2. v cíli &nbsp; " + formatTime(stop2);
+
+    stop2Btn.classList.add("hidden");
+    resultsEl.classList.remove("hidden");
+    number1El.focus();
+  });
+
+  // ----------------------------------------------------------------------
+  // Odeslání – přes outbox (odolné vůči výpadku signálu)
+  // ----------------------------------------------------------------------
+  sendBtn.addEventListener("click", () => {
+    const number1 = number1El.value.trim();
+    const number2 = number2El.value.trim();
+
+    if (!number1 || !number2) {
+      setStatus("Vyplň obě startovní čísla.");
+      return;
+    }
+    if (number1 === number2) {
+      setStatus("Startovní čísla nesmí být stejná.");
+      return;
+    }
+    if (stop1 === null || stop2 === null) {
+      setStatus("Chybí naměřený čas – změř jízdu znovu.");
+      return;
+    }
+
+    const payload = {
+      secret: SHARED_SECRET,
+      rider1: number1,
+      rider2: number2,
+      time1: formatTime(stop1),
+      time2: formatTime(stop2),
+      ms1: stop1,                 // surové ms pro řazení v Sheetu
+      ms2: stop2,
+      clientTs: Date.now(),
+      id: "r-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8) // idempotence
+    };
+
+    enqueue(payload);
+    resetApp();          // okamžitě připraveno na další dvojici
+    flushOutbox();       // pokus o odeslání na pozadí
+  });
+
+  function resetApp() {
+    clearInterval(interval);
+    stop1 = null;
+    stop2 = null;
+    startTime = null;
+
+    timerEl.textContent = "00:00.000";
+    number1El.value = "";
+    number2El.value = "";
+
+    resultsEl.classList.add("hidden");
+    stop1Btn.classList.add("hidden");
+    stop2Btn.classList.add("hidden");
+    startBtn.classList.remove("hidden");
+  }
+
+  // ----------------------------------------------------------------------
+  // Outbox: fronta v localStorage – data nezmizí při výpadku ani refreshi
+  // ----------------------------------------------------------------------
+  function readOutbox() {
+    try { return JSON.parse(localStorage.getItem(OUTBOX_KEY)) || []; }
+    catch (e) { return []; }
+  }
+  function writeOutbox(items) {
+    localStorage.setItem(OUTBOX_KEY, JSON.stringify(items));
+    renderPending(items.length);
+  }
+  function enqueue(payload) {
+    const items = readOutbox();
+    items.push(payload);
+    writeOutbox(items);
+  }
+  function renderPending(count) {
+    if (count > 0) {
+      pendingEl.classList.remove("hidden");
+      pendingEl.textContent = "Čeká na odeslání: " + count + " jízd(a). Drž appku otevřenou.";
+    } else {
+      pendingEl.classList.add("hidden");
+    }
+  }
+
+  let flushing = false;
+  async function flushOutbox() {
+    if (flushing) return;
+    flushing = true;
+    try {
+      let items = readOutbox();
+      while (items.length > 0) {
+        const item = items[0];
+        try {
+          await fetch(GOOGLE_SCRIPT_URL, {
+            method: "POST",
+            mode: "no-cors",  // Apps Script neposílá CORS hlavičky → jinak by fetch spadl
+            headers: { "Content-Type": "text/plain;charset=utf-8" }, // text/plain = bez preflightu
+            body: JSON.stringify(item)
+          });
+          // no-cors = odpověď nepřečteme; bereme jako odeslané a řešíme idempotenci serverem
+          items = readOutbox();
+          items.shift();
+          writeOutbox(items);
+          setStatus("Odesláno.");
+        } catch (err) {
+          setStatus("Bez signálu – zkusím to znovu…");
+          break; // necháme ve frontě, zkusíme později
+        }
+        items = readOutbox();
+      }
+    } finally {
+      flushing = false;
+    }
+  }
+
+  // Periodický pokus o doručení + při návratu signálu / otevření tabu
+  setInterval(flushOutbox, 15000);
+  window.addEventListener("online", flushOutbox);
+
+  // Varování při zavření, pokud něco čeká ve frontě
+  window.addEventListener("beforeunload", (e) => {
+    if (readOutbox().length > 0) { e.preventDefault(); e.returnValue = ""; }
+  });
+
+  // Init
+  renderPending(readOutbox().length);
+  flushOutbox();
+</script>
+
+</body>
+</html>
