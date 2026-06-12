@@ -40,6 +40,20 @@ const PORADI_HEADER = [
   "Kategorie", "Pořadí", "Číslo", "Barva", "Jméno", "Nejlepší čas", "Nejlepší (ms)", "Jízd"
 ];
 
+/**
+ * Vlastní menu v tabulce – přidá položku "Cyklozávod" do horní lišty,
+ * ať jde pořadí vygenerovat klikem, bez chození do editoru Apps Scriptu.
+ * Spustí se samo při otevření tabulky.
+ */
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("Cyklozávod")
+    .addItem("🏁 Vygenerovat pořadí + TOP 3", "generateStandings")
+    .addSeparator()
+    .addItem("⚙️ Připravit kategorie taby", "setupCategorySheets")
+    .addToUi();
+}
+
 /** Test v prohlížeči – ověří, že je nasazení živé. */
 function doGet() {
   return ContentService
