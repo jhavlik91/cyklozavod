@@ -34,6 +34,8 @@ const ID_COL = 8;
 
 // Konečné pořadí (generuje se jednorázově po závodě funkcí generateStandings)
 const PORADI_SHEET  = "Pořadí";
+const TOP_SHEET     = "TOP 3";   // jen nejlepší z každé kategorie
+const TOP_N         = 3;         // kolik nejlepších na kategorii (dle pořadí)
 const PORADI_HEADER = [
   "Kategorie", "Pořadí", "Číslo", "Barva", "Jméno", "Nejlepší čas", "Nejlepší (ms)", "Jízd"
 ];
@@ -243,7 +245,8 @@ function generateStandings() {
     katSheet.getRange(2, 1, lastKat - 1, 1).getValues()
       .map(r => String(r[0]).trim()).filter(String);
 
-  const out = [PORADI_HEADER.slice()];
+  const out = [PORADI_HEADER.slice()];   // kompletní pořadí
+  const top = [PORADI_HEADER.slice()];   // jen TOP N na kategorii
 
   categories.forEach(cat => {
     const sheet = ss.getSheetByName(sheetNameForCategory(cat));
@@ -275,14 +278,21 @@ function generateStandings() {
     let rank = 0, prevMs = null;
     riders.forEach((r, i) => {
       if (r.ms !== prevMs) { rank = i + 1; prevMs = r.ms; }  // shodné časy sdílí pořadí
-      out.push([cat, rank, r.number, r.color, r.name, msToTime(r.ms), r.ms, r.count]);
+      const line = [cat, rank, r.number, r.color, r.name, msToTime(r.ms), r.ms, r.count];
+      out.push(line);
+      if (rank <= TOP_N) top.push(line);                      // jen na bednu
     });
   });
 
-  let sheet = ss.getSheetByName(PORADI_SHEET);
-  if (!sheet) sheet = ss.insertSheet(PORADI_SHEET);
+  writeStandingsSheet(ss, PORADI_SHEET, out);
+  writeStandingsSheet(ss, TOP_SHEET, top);
+}
+
+function writeStandingsSheet(ss, name, rows) {
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) sheet = ss.insertSheet(name);
   sheet.clearContents();
-  sheet.getRange(1, 1, out.length, PORADI_HEADER.length).setValues(out);
+  sheet.getRange(1, 1, rows.length, PORADI_HEADER.length).setValues(rows);
   sheet.setFrozenRows(1);
 }
 
